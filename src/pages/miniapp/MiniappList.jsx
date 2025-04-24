@@ -1075,15 +1075,15 @@ function MiniappList() {
   // 修改工具栏按钮配置
   const toolbarButtons = [
     <Space size="middle" key="toolbar-buttons">
-      <Button onClick={() => showBindModal(mockData)}>批量绑定模板</Button>
-      <Button onClick={() => showOperationModal("submit")}>批量提交审核</Button>
-      <Button onClick={() => showOperationModal("withdraw")}>
+      <Button type="primary" onClick={() => showBindModal(mockData)}>批量绑定模板</Button>
+      <Button type="primary" onClick={() => showOperationModal("submit")}>批量提交审核</Button>
+      <Button type="primary" danger onClick={() => showOperationModal("withdraw")}>
         批量撤回提审
       </Button>
-      <Button onClick={() => showOperationModal("publish")}>
+      <Button type="primary" danger onClick={() => showOperationModal("publish")}>
         批量发布上线
       </Button>
-      <Button onClick={() => showOperationModal("rollback")}>
+      <Button type="primary" danger onClick={() => showOperationModal("rollback")}>
         批量回退版本
       </Button>
     </Space>,
