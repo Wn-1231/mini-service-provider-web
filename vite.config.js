@@ -14,6 +14,6 @@ export default defineConfig({
       overlay: false
     },
     host: '0.0.0.0',
-    allowedHosts: ['xvmniy.cn', 'localhost']
+    allowedHosts: ['xvmniy.cn', 'localhost', 'windows.dev.zhihu.com']
   }
 })
