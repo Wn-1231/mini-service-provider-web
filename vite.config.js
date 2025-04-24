@@ -12,6 +12,8 @@ export default defineConfig({
   server: {
     hmr: {
       overlay: false
-    }
+    },
+    host: '0.0.0.0',
+    allowedHosts: ['xvmniy.cn', 'localhost']
   }
 })
