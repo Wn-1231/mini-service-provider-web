@@ -22,52 +22,108 @@ import {
   Empty,
   Image,
   Table,
-  Dropdown,
+  Tooltip,
+  Divider,
+  Radio,
 } from "antd";
 
 import {
-  AuditOutlined,
   RollbackOutlined,
-  SendOutlined,
-  LinkOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
   ExperimentOutlined,
   GlobalOutlined,
   CloseCircleOutlined,
-  SettingOutlined,
   InfoCircleOutlined,
-  QrcodeOutlined,
-  DownOutlined,
+  FilterFilled,
+  EditOutlined,
 } from "@ant-design/icons";
 
 import dayjs from "dayjs";
+import SelectionTable from "../../components/SelectionTable";
+import RenderConfigModal from "../../components/RenderConfigModal";
 
 const { Text } = Typography;
 const { TextArea } = Input;
 
-// 模拟模板数据
-const templateOptions = Array.from({ length: 10 }).map((_, index) => ({
-  value: `tpl_${index}`,
-  label: `模板${index + 1} (v${Math.floor(Math.random() * 10)}.${Math.floor(
+// 修改模板数据的结构，添加版本号
+const templateOptions = Array.from({ length: 10 }).map((_, index) => {
+  const version = `${Math.floor(Math.random() * 5)}.${Math.floor(
     Math.random() * 10
-  )}.${Math.floor(Math.random() * 10)})`,
-}));
+  )}.${Math.floor(Math.random() * 10)}`;
+  return {
+    value: `tpl_${index}`,
+    label: `模板名称${index + 1}`,
+    version: version,
+  };
+});
 
-// 模拟小程序数据
-const mockData = Array.from({ length: 10 }).map((_, index) => ({
-  id: `miniapp_${index + 1}`,
-  icon: `https://api.dicebear.com/7.x/bottts/svg?seed=${index}`,
-  name: `测试小程序${index + 1}`,
-  appid: `wx${Math.random().toString().slice(2, 12)}`,
-  vendor: `媒体商${index + 1}`,
-  subject: `主体${index + 1}`,
-  appkey: Math.random().toString(36).slice(2, 10).toUpperCase(),
-  status: Math.floor(Math.random() * 3).toString(), // 生成 "0", "1", "2"
-  admin: `管理员${index + 1}`,
-  template:
-    templateOptions[Math.floor(Math.random() * templateOptions.length)].value,
-}));
+// 修改状态配置
+const statusConfig = {
+  AUDITING: {
+    value: "AUDITING",
+    text: "审核中",
+    color: "processing",
+    icon: <ClockCircleOutlined />,
+  },
+  PUBLISHED: {
+    value: "PUBLISHED",
+    text: "已发布",
+    color: "success",
+    icon: <CheckCircleOutlined />,
+  },
+  UNPUBLISHED: {
+    value: "UNPUBLISHED",
+    text: "未发布",
+    color: "default",
+    icon: <InfoCircleOutlined />,
+  },
+  REJECT: {
+    value: "REJECT",
+    text: "审核失败",
+    color: "error",
+    icon: <CloseCircleOutlined />,
+  },
+};
+
+// 修改小程序数据结构
+const mockData = Array.from({ length: 5 }).map((_, index) => {
+  const template =
+    templateOptions[Math.floor(Math.random() * templateOptions.length)];
+  // 随机生成状态
+  const statusList = Object.keys(statusConfig);
+  const status = statusList[Math.floor(Math.random() * statusList.length)];
+
+  // 生成版本号的辅助函数
+  const generateVersion = () => {
+    return `${Math.floor(Math.random() * 5)}.${Math.floor(
+      Math.random() * 10
+    )}.${Math.floor(Math.random() * 10)}`;
+  };
+
+  return {
+    id: `miniapp_${index + 1}`,
+    icon: `https://api.dicebear.com/7.x/bottts/svg?seed=${index}`,
+    name: `测试小程序${index + 1}`,
+    appid: `wx${Math.random().toString().slice(2, 12)}`,
+    vendor: `媒体商${index + 1}`,
+    subject: `主体${index + 1}`,
+    appkey: Math.random().toString(36).slice(2, 10).toUpperCase(),
+    status: status,
+    rejectReason:
+      status === "REJECT"
+        ? "小程序违反相关规范，具体原因：1. 服务类目不符合要求；2. 小程序名称不规范"
+        : null,
+    admin: `管理员${index + 1}`,
+    template: template.value,
+    templateVersion: generateVersion(), // 测试版本
+    currentVersion: status === "PUBLISHED" ? generateVersion() : null, // 线上版本
+    auditVersion: ["AUDITING", "REJECT"].includes(status)
+      ? generateVersion()
+      : null, // 审核版本
+    auditStatus: status === "AUDITING" ? 0 : status === "REJECT" ? 2 : null, // 添加审核状态
+  };
+});
 
 console.log("mockData", mockData);
 
@@ -388,6 +444,182 @@ const AuditHistory = ({ history }) => {
   );
 };
 
+// 添加版本比较函数
+const compareVersion = (v1, v2) => {
+  if (!v1 || !v2) return false;
+  const v1Parts = v1.split(".").map(Number);
+  const v2Parts = v2.split(".").map(Number);
+
+  for (let i = 0; i < 3; i++) {
+    if (v1Parts[i] > v2Parts[i]) return 1;
+    if (v1Parts[i] < v2Parts[i]) return -1;
+  }
+  return 0;
+};
+
+// 创建通用的版本过滤下拉框组件
+const VersionFilterDropdown = ({
+  setSelectedKeys,
+  selectedKeys,
+  confirm,
+  clearFilters,
+}) => (
+  <div style={{ padding: 8 }}>
+    <Input
+      placeholder="输入版本号 (x.y.z)"
+      value={selectedKeys[0]}
+      onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+      style={{ width: 188, marginBottom: 8, display: "block" }}
+    />
+    <Space>
+      <Button
+        type="primary"
+        onClick={() => confirm({ closeDropdown: true })}
+        size="small"
+        style={{ width: 90 }}
+      >
+        确定
+      </Button>
+      <Button
+        onClick={() => {
+          clearFilters();
+          confirm({ closeDropdown: true });
+        }}
+        size="small"
+        style={{ width: 90 }}
+      >
+        重置
+      </Button>
+    </Space>
+    <Divider style={{ margin: "8px 0" }} />
+    <div style={{ padding: "4px 0" }}>过滤方式：</div>
+    <Radio.Group
+      value={selectedKeys[1] || "eq"}
+      onChange={e =>
+        setSelectedKeys(
+          selectedKeys[0] ? [selectedKeys[0], e.target.value] : []
+        )
+      }
+      size="small"
+    >
+      <Space direction="vertical">
+        <Radio value="eq">等于</Radio>
+        <Radio value="gt">大于</Radio>
+        <Radio value="gte">大于等于</Radio>
+        <Radio value="lt">小于</Radio>
+        <Radio value="lte">小于等于</Radio>
+      </Space>
+    </Radio.Group>
+  </div>
+);
+
+// 创建通用的版本列配置生成函数
+const getVersionColumn = (dataIndex, title, color = "success") => ({
+  title,
+  dataIndex,
+  width: 150,
+  render: version =>
+    version ? (
+      <Tag color={color}>v{version}</Tag>
+    ) : (
+      <Text type="secondary">-</Text>
+    ),
+  filterDropdown: VersionFilterDropdown,
+  filterIcon: filtered => (
+    <FilterFilled style={{ color: filtered ? "#1890ff" : undefined }} />
+  ),
+  onFilter: (value, record, filterBy = "eq") => {
+    if (!record[dataIndex]) return false;
+    const compareResult = compareVersion(record[dataIndex], value);
+    switch (filterBy) {
+      case "gt":
+        return compareResult > 0;
+      case "gte":
+        return compareResult >= 0;
+      case "lt":
+        return compareResult < 0;
+      case "lte":
+        return compareResult <= 0;
+      default:
+        return compareResult === 0;
+    }
+  },
+});
+
+// 在弹窗中使用通用的表格列配置
+const getCommonTableColumns = () => [
+  {
+    title: "小程序名称",
+    dataIndex: "name",
+    fixed: "left",
+    width: 200,
+    render: (text, record) => (
+      <Space>
+        <Avatar size="small" src={record.icon} shape="square" />
+        <span>{text}</span>
+      </Space>
+    ),
+    filterMode: "menu",
+    filterSearch: true,
+    filters: Array.from(new Set(mockData.map(item => item.name))).map(name => ({
+      text: name,
+      value: name,
+    })),
+    onFilter: (value, record) => record.name.includes(value),
+  },
+  {
+    title: "小程序ID",
+    dataIndex: "appid",
+    width: 150,
+    filterMode: "menu",
+    filterSearch: true,
+    filters: Array.from(new Set(mockData.map(item => item.appid))).map(
+      appid => ({
+        text: appid,
+        value: appid,
+      })
+    ),
+    onFilter: (value, record) => record.appid.includes(value),
+  },
+  getVersionColumn("currentVersion", "线上版本", "success"),
+  getVersionColumn("auditVersion", "审核版本", "warning"),
+  getVersionColumn("templateVersion", "测试版本", "purple"),
+  {
+    title: "状态",
+    dataIndex: "status",
+    width: 120,
+    render: (status, record) => {
+      const config = statusConfig[status];
+      return (
+        <Space>
+          {config.icon}
+          <Tag color={config.color}>{config.text}</Tag>
+          {status === "REJECT" && (
+            <Tooltip title={record.rejectReason}>
+              <InfoCircleOutlined
+                style={{ color: "#ff4d4f", cursor: "pointer" }}
+              />
+            </Tooltip>
+          )}
+        </Space>
+      );
+    },
+    filters: Object.values(statusConfig).map(item => ({
+      text: item.text,
+      value: item.value,
+    })),
+    onFilter: (value, record) => record.status === value,
+  },
+];
+
+// 在所有批量操作弹窗中使用相同的表格配置
+const commonTableProps = {
+  size: "small",
+  scroll: { y: 400 },
+  pagination: false,
+  columns: getCommonTableColumns(),
+};
+
 function MiniappList() {
   const [operationModalVisible, setOperationModalVisible] = useState(false);
   const [operationType, setOperationType] = useState("submit"); // 默认为提交审核
@@ -417,6 +649,89 @@ function MiniappList() {
   const [qrcodeVersion, setQrcodeVersion] = useState("online");
   const [qrcodeUrl, setQrcodeUrl] = useState("");
   const actionRef = useRef();
+  const [batchDevSettingsVisible, setBatchDevSettingsVisible] = useState(false);
+  const [selectedMiniappsForSettings, setSelectedMiniappsForSettings] =
+    useState([]);
+  const [batchSettingsForm] = Form.useForm();
+  const [configVisible, setConfigVisible] = useState(false);
+  const [currentConfig, setCurrentConfig] = useState(null);
+  const [bindTestTemplateVisible, setBindTestTemplateVisible] = useState(false);
+  const [devConfigVisible, setDevConfigVisible] = useState(false);
+  // 添加失败结果的状态管理
+  const [failedResults, setFailedResults] = useState([]);
+  const [failedModalVisible, setFailedModalVisible] = useState(false);
+  const [renderConfigVisible, setRenderConfigVisible] = useState(false);
+
+  // 配置schema定义
+  const configSchema = {
+    type: 'object',
+    properties: {
+      primaryColor: {
+        type: 'string',
+        title: '主题色',
+        format: 'color',
+        default: '#1890ff',
+        description: '整个应用的主色调',
+        extra: '主色调，默认为蓝色 #1890ff'
+      },
+      darkColor: {
+        type: 'string',
+        title: '主题深色',
+        format: 'color',
+        default: '#001529',
+        description: '用于导航等深色区域',
+        extra: '用于导航等深色区域，默认为 #001529'
+      },
+      warningColor: {
+        type: 'string',
+        title: '提醒色',
+        format: 'color',
+        default: '#faad14',
+        description: '警告、提示等颜色',
+        extra: '警告、提示等颜色，默认为黄色 #faad14'
+      },
+      linkColor: {
+        type: 'string',
+        title: '链接色',
+        format: 'color',
+        default: '#1890ff',
+        description: '超链接颜色',
+        extra: '超链接颜色，默认为蓝色 #1890ff'
+      }
+    },
+    required: ['primaryColor', 'darkColor', 'warningColor', 'linkColor']
+  };
+  
+  // 处理保存配置
+  const handleSaveConfig = (values) => {
+    console.log("保存配置:", values);
+    // 这里可以调用API保存配置
+    
+    // 更新本地状态以模拟保存效果
+    if (currentMiniapp) {
+      setCurrentMiniapp({
+        ...currentMiniapp,
+        draftRenderConfig: values
+      });
+    }
+  };
+  
+  // 处理发布小程序
+  const handlePublishMiniapp = () => {
+    console.log("发布小程序:", currentMiniapp?.id);
+    message.success("发布请求已提交");
+    
+    // 更新本地状态以模拟发布效果
+    if (currentMiniapp?.draftRenderConfig) {
+      setCurrentMiniapp({
+        ...currentMiniapp,
+        renderConfig: currentMiniapp.draftRenderConfig,
+        draftRenderConfig: null
+      });
+    }
+    
+    setRenderConfigVisible(false);
+  };
 
   // 1. 先定义所有处理函数
   const handleBindTemplate = async () => {
@@ -630,6 +945,15 @@ function MiniappList() {
 
   // 修改处理批量操作函数，添加模板和版本检查
   const handleBatchOperation = async () => {
+    // 如果是提交审核，先验证备注信息
+    if (operationType === "submit") {
+      try {
+        await form.validateFields();
+      } catch (error) {
+        return; // 如果验证失败，直接返回
+      }
+    }
+
     if (!selectedApps.length) {
       message.warning("请选择小程序");
       return;
@@ -678,40 +1002,121 @@ function MiniappList() {
     }
   };
 
-  // 提取实际执行操作的函数
+  // 修改实际执行操作的函数
   const performBatchOperation = async () => {
-    setLoading(true); // 开始加载
+    setLoading(true);
     try {
+      // 获取提审备注（如果是提交审核操作）
+      const auditRemark =
+        operationType === "submit" ? form.getFieldValue("auditRemark") : null;
+
       // 这里模拟接口调用
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // 使用模拟结果数据
-      const result = operationConfig[operationType].mockResult;
+      const result = {
+        ...operationConfig[operationType].mockResult,
+        data: {
+          ...operationConfig[operationType].mockResult.data,
+          auditRemark,
+          // 模拟部分失败的情况
+          failedList: [
+            {
+              id: "miniapp_1",
+              name: "测试小程序1",
+              appid: "wx123456",
+              reason: "接口调用失败",
+              retryable: true,
+            },
+            {
+              id: "miniapp_2",
+              name: "测试小程序2",
+              appid: "wx234567",
+              reason: "版本号错误",
+              retryable: false,
+            },
+          ],
+        },
+      };
 
       if (result.success) {
-        if (result.data.failed > 0) {
-          modal.info({
-            title: `${operationConfig[operationType].title}结果`,
+        // 如果有失败的项目，显示失败结果弹窗
+        if (result.data.failedList?.length > 0) {
+          setFailedResults(result.data.failedList);
+          setFailedModalVisible(true);
+          Modal.confirm({
+            title: "操作结果",
+            width: 800,
             content: (
-              <div>
-                <p>
-                  总计: {result.data.total}个，成功: {result.data.success}
-                  个，失败: {result.data.failed}个
-                </p>
-                {result.data.failedList.length > 0 && (
-                  <div>
-                    <p>失败列表:</p>
-                    <ul>
-                      {result.data.failedList.map(item => (
-                        <li key={item.appid}>
-                          {item.name} ({item.appid}): {item.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
+              <Space
+                direction="vertical"
+                style={{ width: "100%" }}
+                size="large"
+              >
+                <Alert
+                  message={`总计: ${result.data.total}个，成功: ${result.data.success}个，失败: ${result.data.failedList.length}个`}
+                  type="warning"
+                  showIcon
+                />
+                <Table
+                  dataSource={result.data.failedList}
+                  columns={[
+                    {
+                      title: "小程序名称",
+                      dataIndex: "name",
+                      width: 200,
+                    },
+                    {
+                      title: "AppID",
+                      dataIndex: "appid",
+                      width: 150,
+                    },
+                    {
+                      title: "失败原因",
+                      dataIndex: "reason",
+                    },
+                    {
+                      title: "操作",
+                      width: 120,
+                      render: (_, record) =>
+                        record.retryable ? (
+                          <Button
+                            type="link"
+                            onClick={() => handleRetryOperation([record])}
+                          >
+                            重试
+                          </Button>
+                        ) : (
+                          <Tooltip title="当前错误无法通过重试解决">
+                            <Text type="secondary">不可重试</Text>
+                          </Tooltip>
+                        ),
+                    },
+                  ]}
+                  rowKey="id"
+                  pagination={false}
+                />
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={() =>
+                      handleRetryOperation(
+                        result.data.failedList.filter(item => item.retryable)
+                      )
+                    }
+                    disabled={
+                      !result.data.failedList.some(item => item.retryable)
+                    }
+                  >
+                    全部重试
+                  </Button>
+                  <Button onClick={() => setFailedModalVisible(false)}>
+                    关闭
+                  </Button>
+                </Space>
+              </Space>
             ),
+            footer: null,
           });
         } else {
           message.success(result.message);
@@ -722,11 +1127,36 @@ function MiniappList() {
 
       setOperationModalVisible(false);
       setSelectedApps([]);
-      // 实际场景中这里需要刷新列表
+      form.resetFields();
     } catch (err) {
       message.error("操作失败，请重试");
     } finally {
-      setLoading(false); // 结束加载
+      setLoading(false);
+    }
+  };
+
+  // 添加重试操作的处理函数
+  const handleRetryOperation = async failedItems => {
+    setLoading(true);
+    try {
+      // 这里调用重试接口
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 更新失败结果列表
+      setFailedResults(prev =>
+        prev.filter(item => !failedItems.find(f => f.id === item.id))
+      );
+
+      message.success(`重试成功: ${failedItems.length}个`);
+
+      // 如果所有失败项都已处理完，关闭弹窗
+      if (failedResults.length === failedItems.length) {
+        setFailedModalVisible(false);
+      }
+    } catch (error) {
+      message.error("重试失败，请稍后再试");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -902,6 +1332,469 @@ function MiniappList() {
     }
   };
 
+  // 处理批量开发设置
+  const handleBatchDevSettings = async () => {
+    try {
+      const values = await batchSettingsForm.validateFields();
+      // 处理每个域名字符串，转换为数组
+      const formattedValues = Object.keys(values).reduce((acc, key) => {
+        if (key !== "miniapps") {
+          // 排除小程序选择字段
+          acc[key] = values[key].split("\n").filter(item => item.trim());
+        }
+        return acc;
+      }, {});
+
+      // 这里模拟保存配置
+      setLoading(true);
+      await Promise.all(
+        selectedMiniappsForSettings.map(appId =>
+          new Promise((resolve, reject) => {
+            // 模拟成功率 95%
+            if (Math.random() > 0.05) {
+              setTimeout(resolve, 1000);
+            } else {
+              reject(new Error(`小程序 ${appId} 配置失败`));
+            }
+          }).catch(error => ({ error, appId }))
+        )
+      ).then(results => {
+        const failures = results.filter(r => r?.error);
+
+        if (failures.length > 0) {
+          modal.error({
+            title: "部分小程序配置失败",
+            content: (
+              <div>
+                {failures.map(({ error, appId }) => {
+                  const app = mockData.find(item => item.id === appId);
+                  return (
+                    <div key={appId}>
+                      {app?.name || appId}: {error.message}
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          });
+        } else {
+          message.success(
+            `成功配置 ${selectedMiniappsForSettings.length} 个小程序`
+          );
+        }
+      });
+
+      setBatchDevSettingsVisible(false);
+      setSelectedMiniappsForSettings([]);
+      batchSettingsForm.resetFields();
+    } catch {
+      message.error("配置保存失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理全选小程序
+  const handleSelectAllMiniapps = checked => {
+    if (checked) {
+      setSelectedMiniappsForSettings(mockData.map(item => item.id));
+    } else {
+      setSelectedMiniappsForSettings([]);
+    }
+  };
+
+  // 显示批量设置弹窗
+  const showBatchDevSettings = () => {
+    Modal.confirm({
+      title: "批量开发设置",
+      width: 800,
+      content: (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Alert
+            message="批量设置说明"
+            description="选择需要配置的小程序，设置将应用到所有选中的小程序。此操作会覆盖小程序现有的域名配置。"
+            type="info"
+            showIcon
+          />
+          <SelectionTable
+            dataSource={mockData}
+            selectedRowKeys={selectedRowKeys}
+            onSelectChange={setSelectedRowKeys}
+            showVersions={false}
+          />
+          <Divider>域名配置</Divider>
+          <Form
+            form={batchSettingsForm}
+            layout="vertical"
+            initialValues={{
+              requestDomains: defaultDomainConfig.requestDomains.join("\n"),
+              socketDomains: defaultDomainConfig.socketDomains.join("\n"),
+              uploadDomains: defaultDomainConfig.uploadDomains.join("\n"),
+              downloadDomains: defaultDomainConfig.downloadDomains.join("\n"),
+              webviewDomains: defaultDomainConfig.webviewDomains.join("\n"),
+            }}
+          >
+            <Tabs
+              type="card"
+              size="small"
+              defaultActiveKey="request"
+              tabBarStyle={{ marginBottom: 16 }}
+              tabBarGutter={8}
+              items={[
+                {
+                  key: "request",
+                  label: "request域名",
+                  children: (
+                    <Form.Item
+                      name="requestDomains"
+                      rules={[
+                        { required: true, message: "请输入request合法域名" },
+                        {
+                          validator: (_, value) => {
+                            const domains = value
+                              .split("\n")
+                              .filter(item => item.trim());
+                            const isValid = domains.every(
+                              domain =>
+                                domain.startsWith("http://") ||
+                                domain.startsWith("https://")
+                            );
+                            return isValid
+                              ? Promise.resolve()
+                              : Promise.reject(
+                                  "域名必须以 http:// 或 https:// 开头"
+                                );
+                          },
+                        },
+                      ]}
+                      extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                    >
+                      <TextArea
+                        placeholder="请输入request合法域名，每行一个"
+                        autoSize={{ minRows: 4, maxRows: 6 }}
+                        style={{ backgroundColor: "#fafafa" }}
+                      />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  key: "socket",
+                  label: "socket域名",
+                  children: (
+                    <Form.Item
+                      name="socketDomains"
+                      rules={[
+                        { required: true, message: "请输入socket合法域名" },
+                        {
+                          validator: (_, value) => {
+                            const domains = value
+                              .split("\n")
+                              .filter(item => item.trim());
+                            const isValid = domains.every(
+                              domain =>
+                                domain.startsWith("ws://") ||
+                                domain.startsWith("wss://")
+                            );
+                            return isValid
+                              ? Promise.resolve()
+                              : Promise.reject(
+                                  "域名必须以 ws:// 或 wss:// 开头"
+                                );
+                          },
+                        },
+                      ]}
+                      extra="每行一个域名，必须以 ws:// 或 wss:// 开头"
+                    >
+                      <TextArea
+                        placeholder="请输入socket合法域名，每行一个"
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                      />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  key: "upload",
+                  label: "上传域名",
+                  children: (
+                    <Form.Item
+                      name="uploadDomains"
+                      rules={[
+                        { required: true, message: "请输入uploadFile合法域名" },
+                        {
+                          validator: (_, value) => {
+                            const domains = value
+                              .split("\n")
+                              .filter(item => item.trim());
+                            const isValid = domains.every(
+                              domain =>
+                                domain.startsWith("http://") ||
+                                domain.startsWith("https://")
+                            );
+                            return isValid
+                              ? Promise.resolve()
+                              : Promise.reject(
+                                  "域名必须以 http:// 或 https:// 开头"
+                                );
+                          },
+                        },
+                      ]}
+                      extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                    >
+                      <TextArea
+                        placeholder="请输入uploadFile合法域名，每行一个"
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                      />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  key: "download",
+                  label: "下载域名",
+                  children: (
+                    <Form.Item
+                      name="downloadDomains"
+                      rules={[
+                        {
+                          required: true,
+                          message: "请输入downloadFile合法域名",
+                        },
+                        {
+                          validator: (_, value) => {
+                            const domains = value
+                              .split("\n")
+                              .filter(item => item.trim());
+                            const isValid = domains.every(
+                              domain =>
+                                domain.startsWith("http://") ||
+                                domain.startsWith("https://")
+                            );
+                            return isValid
+                              ? Promise.resolve()
+                              : Promise.reject(
+                                  "域名必须以 http:// 或 https:// 开头"
+                                );
+                          },
+                        },
+                      ]}
+                      extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                    >
+                      <TextArea
+                        placeholder="请输入downloadFile合法域名，每行一个"
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                      />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  key: "webview",
+                  label: "web-view域名",
+                  children: (
+                    <Form.Item
+                      name="webviewDomains"
+                      rules={[
+                        { required: true, message: "请输入web-view域名" },
+                        {
+                          validator: (_, value) => {
+                            const domains = value
+                              .split("\n")
+                              .filter(item => item.trim());
+                            const isValid = domains.every(
+                              domain =>
+                                domain.startsWith("http://") ||
+                                domain.startsWith("https://")
+                            );
+                            return isValid
+                              ? Promise.resolve()
+                              : Promise.reject(
+                                  "域名必须以 http:// 或 https:// 开头"
+                                );
+                          },
+                        },
+                      ]}
+                      extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                    >
+                      <TextArea
+                        placeholder="请输入web-view域名，每行一个"
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                      />
+                    </Form.Item>
+                  ),
+                },
+              ]}
+            />
+          </Form>
+          <div
+            style={{
+              backgroundColor: "#fffbe6",
+              padding: "12px 16px",
+              borderRadius: 4,
+            }}
+          >
+            <Alert
+              type="warning"
+              message="注意事项"
+              showIcon
+              description={
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  <li>
+                    所有域名必须以 http:// 或 https:// 开头（socket域名以 ws://
+                    或 wss:// 开头）
+                  </li>
+                  <li>域名不能使用 IP 地址或 localhost</li>
+                  <li>域名必须经过 ICP 备案</li>
+                  <li>同一域名只能配置一次</li>
+                  <li>批量设置将覆盖所选小程序的现有配置</li>
+                </ul>
+              }
+            />
+          </div>
+        </Space>
+      ),
+      okText: "确认设置",
+      cancelText: "取消",
+      maskClosable: false,
+      onOk: handleBatchDevSettings,
+    });
+  };
+
+  // 显示配置弹窗
+  const showConfigModal = record => {
+    // 模拟获取小程序配置
+    const config = {
+      requestDomains: defaultDomainConfig.requestDomains,
+      socketDomains: defaultDomainConfig.socketDomains,
+      uploadDomains: defaultDomainConfig.uploadDomains,
+      downloadDomains: defaultDomainConfig.downloadDomains,
+      webviewDomains: defaultDomainConfig.webviewDomains,
+    };
+    setCurrentConfig(config);
+    setCurrentMiniapp(record);
+    setConfigVisible(true);
+  };
+
+  // 修改操作按钮
+  const actionButtons = record => (
+    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+      <Space size="middle">
+        <Button
+          type="link"
+          size="small"
+          onClick={() => showBindTestTemplateModal(record)}
+        >
+          绑定测试模板
+        </Button>
+        <Button
+          key="baseInfo"
+          type="link"
+          size="small"
+          onClick={() => {
+            setCurrentMiniapp(record);
+            setBaseInfoVisible(true);
+            form.setFieldsValue({
+              name: record.name,
+              shortName: record.name,
+              icon: record.icon,
+              vendor: record.vendor,
+              subject: record.subject,
+              appid: record.appid,
+              merchantId: "",
+              admin: record.admin,
+            });
+          }}
+        >
+          基础信息
+        </Button>
+      </Space>
+      <Space size={4} wrap>
+        <Button
+          key="detail"
+          type="link"
+          size="small"
+          onClick={() => handleShowDetail(record)}
+        >
+          版本信息
+        </Button>
+        <Button
+          key="qrcode"
+          type="link"
+          size="small"
+          onClick={() => {
+            setCurrentMiniapp(record);
+            setQrcodeVisible(true);
+            setQrcodePath("");
+            setQrcodeVersion("online");
+          }}
+        >
+          二维码
+        </Button>
+      </Space>
+    </Space>
+  );
+
+  // 修改工具栏按钮配置，添加批量开发设置按钮
+  const toolbarButtons = [
+    <Space size="middle" key="toolbar-buttons">
+      <Button type="primary" onClick={showBatchDevSettings}>
+        批量开发设置
+      </Button>
+      <Button type="primary" onClick={() => showBindModal(mockData)}>
+        批量绑定模板
+      </Button>
+      <Button type="primary" onClick={() => showOperationModal("submit")}>
+        批量提交审核
+      </Button>
+      <Button
+        type="primary"
+        danger
+        onClick={() => showOperationModal("withdraw")}
+      >
+        批量撤回提审
+      </Button>
+      <Button
+        type="primary"
+        danger
+        onClick={() => showOperationModal("publish")}
+      >
+        批量发布上线
+      </Button>
+      <Button
+        type="primary"
+        danger
+        onClick={() => showOperationModal("rollback")}
+      >
+        批量回退版本
+      </Button>
+    </Space>,
+  ];
+
+  // 显示绑定测试模板弹窗
+  const showBindTestTemplateModal = record => {
+    setCurrentMiniapp(record);
+    setSelectedTemplate(null);
+    setBindTestTemplateVisible(true);
+  };
+
+  // 处理绑定测试模板
+  const handleBindTestTemplate = async () => {
+    if (!selectedTemplate) {
+      message.error("请选择要绑定的模板版本");
+      return;
+    }
+
+    try {
+      // 这里添加绑定测试模板的接口调用
+      message.success("绑定测试模板成功");
+      setBindTestTemplateVisible(false);
+      setCurrentMiniapp(null);
+      setSelectedTemplate(null);
+      // 刷新列表
+      actionRef.current?.reload();
+    } catch (error) {
+      message.error("绑定测试模板失败");
+    }
+  };
+
+  // 添加 ProTable 的列配置
   const columns = [
     {
       title: "图标",
@@ -921,10 +1814,77 @@ function MiniappList() {
       search: true,
     },
     {
-      title: "媒体厂商",
-      dataIndex: "vendor",
-      search: true,
+      title: "版本信息",
+      dataIndex: "versions",
+      width: 180,
+      render: (_, record) => (
+        <Space direction="vertical" size={2} style={{ width: "100%" }}>
+          <Space>
+            <Text type="secondary" style={{ width: 70 }}>
+              线上版本:
+            </Text>
+            {record.currentVersion ? (
+              <Tag color="success">v{record.currentVersion}</Tag>
+            ) : (
+              <Text type="secondary">-</Text>
+            )}
+          </Space>
+          <Space>
+            <Text type="secondary" style={{ width: 70 }}>
+              审核版本:
+            </Text>
+            {record.auditVersion ? (
+              <Tag color="warning">v{record.auditVersion}</Tag>
+            ) : (
+              <Text type="secondary">-</Text>
+            )}
+          </Space>
+          <Space>
+            <Text type="secondary" style={{ width: 70 }}>
+              测试版本:
+            </Text>
+            {record.templateVersion ? (
+              <Tag color="purple">v{record.templateVersion}</Tag>
+            ) : (
+              <Text type="secondary">-</Text>
+            )}
+          </Space>
+        </Space>
+      ),
+      filterDropdown: VersionFilterDropdown,
+      filterIcon: filtered => (
+        <FilterFilled style={{ color: filtered ? "#1890ff" : undefined }} />
+      ),
+      onFilter: (value, record, filterBy = "eq") => {
+        // 在所有版本中查找匹配的版本
+        const versions = [
+          record.currentVersion,
+          record.auditVersion,
+          record.templateVersion,
+        ].filter(Boolean);
+
+        return versions.some(version => {
+          const compareResult = compareVersion(version, value);
+          switch (filterBy) {
+            case "gt":
+              return compareResult > 0;
+            case "gte":
+              return compareResult >= 0;
+            case "lt":
+              return compareResult < 0;
+            case "lte":
+              return compareResult <= 0;
+            default:
+              return compareResult === 0;
+          }
+        });
+      },
     },
+    // {
+    //   title: "媒体厂商",
+    //   dataIndex: "vendor",
+    //   search: true,
+    // },
     {
       title: "小程序主体",
       dataIndex: "subject",
@@ -939,25 +1899,28 @@ function MiniappList() {
     {
       title: "状态",
       dataIndex: "status",
-      valueEnum: {
-        0: { text: "未发布", status: "Default" },
-        1: { text: "已发布", status: "Success" },
-        2: { text: "已下线", status: "Error" },
-      },
-      search: true,
-      render: (_, record) => {
-        const statusConfig = {
-          0: { text: "未发布", color: "#999999" },
-          1: { text: "已发布", color: "#52c41a" },
-          2: { text: "已下线", color: "#ff4d4f" },
-        };
-
+      width: 120,
+      render: (status, record) => {
+        const config = statusConfig[status];
         return (
-          <span style={{ color: statusConfig[record.status]?.color }}>
-            {statusConfig[record.status]?.text}
-          </span>
+          <Space>
+            {config.icon}
+            <Tag color={config.color}>{config.text}</Tag>
+            {status === "REJECT" && (
+              <Tooltip title={record.rejectReason}>
+                <InfoCircleOutlined
+                  style={{ color: "#ff4d4f", cursor: "pointer" }}
+                />
+              </Tooltip>
+            )}
+          </Space>
         );
       },
+      filters: Object.values(statusConfig).map(item => ({
+        text: item.text,
+        value: item.value,
+      })),
+      onFilter: (value, record) => record.status === value,
     },
     {
       title: "管理员",
@@ -965,133 +1928,278 @@ function MiniappList() {
       search: true,
     },
     {
-      title: "操作",
+      title: "产品操作",
       valueType: "option",
-      width: 180,
-      render: (_, record) => {
-        return (
-          <Space direction="vertical" size={4} style={{ width: "100%" }}>
-            <Space size={4} wrap>
-              <Button
-                key="baseInfo"
-                type="link"
-                size="small"
-                onClick={() => {
-                  setCurrentMiniapp(record);
-                  setBaseInfoVisible(true);
-                  form.setFieldsValue({
-                    name: record.name,
-                    shortName: record.shortName || "",
-                    icon: record.icon,
-                    vendor: record.vendor,
-                    subject: record.subject,
-                    appid: record.appid,
-                    merchantId: record.merchantId || "",
-                    admin: record.admin,
-                  });
-                }}
-              >
-                基础信息
-              </Button>
-
-              <Button
-                key="business"
-                type="link"
-                size="small"
-                onClick={() => {
-                  setCurrentMiniapp(record);
-                  // 这里可以添加业务配置的处理逻辑
-                  message.info(`${record.name} 的业务配置功能开发中`);
-                }}
-              >
-                业务配置
-              </Button>
-            </Space>
-            <Space size={4} wrap>
-              <Button
-                key="runtime"
-                type="link"
-                size="small"
-                onClick={() => {
-                  setCurrentMiniapp(record);
-                  // 这里可以添加运行时配置的处理逻辑
-                  message.info(`${record.name} 的运行时配置功能开发中`);
-                }}
-              >
-                运行时配置
-              </Button>
-              <Button
-                key="settings"
-                type="link"
-                size="small"
-                onClick={() => {
-                  setCurrentMiniapp(record);
-                  setDevSettingsVisible(true);
-                  setDomainConfig(defaultDomainConfig);
-                }}
-              >
-                开发设置
-              </Button>
-            </Space>
-            <Space size={4} wrap>
-              <Button
-                key="detail"
-                type="link"
-                size="small"
-                onClick={() => handleShowDetail(record)}
-              >
-                版本信息
-              </Button>
-              <Button
-                key="bind"
-                type="link"
-                size="small"
-                onClick={() => showBindModal(record)}
-              >
-                绑定模板
-              </Button>
-            </Space>
-            <Space size={4} wrap>
-              <Button
-                key="qrcode"
-                type="link"
-                size="small"
-                onClick={() => {
-                  setCurrentMiniapp(record);
-                  setQrcodeVisible(true);
-                  setQrcodePath("");
-                  setQrcodeVersion("online");
-                }}
-              >
-                二维码
-              </Button>
-            </Space>
-          </Space>
-        );
-      },
+      width: 80,
+      align: "center",
+      fixed: "right",
+      render: (_, record) => productActionButtons(record),
+    },
+    {
+      title: "研发操作",
+      valueType: "option",
+      width: 80,
+      align: "center",
+      fixed: "right",
+      render: (_, record) => devActionButtons(record),
     },
   ];
 
-  // 修改工具栏按钮配置
-  const toolbarButtons = [
-    <Space size="middle" key="toolbar-buttons">
-      <Button type="primary" onClick={() => showBindModal(mockData)}>批量绑定模板</Button>
-      <Button type="primary" onClick={() => showOperationModal("submit")}>批量提交审核</Button>
-      <Button type="primary" danger onClick={() => showOperationModal("withdraw")}>
-        批量撤回提审
+  // 产品操作按钮
+  const productActionButtons = record => (
+    <Space
+      direction="vertical"
+      size={4}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+      }}
+    >
+      <Button
+        key="baseInfo"
+        type="link"
+        size="small"
+        onClick={() => {
+          setCurrentMiniapp(record);
+          setBaseInfoVisible(true);
+          form.setFieldsValue({
+            name: record.name,
+            shortName: record.name,
+            icon: record.icon,
+            vendor: record.vendor,
+            subject: record.subject,
+            appid: record.appid,
+            merchantId: "",
+            admin: record.admin,
+          });
+        }}
+      >
+        基础信息
       </Button>
-      <Button type="primary" danger onClick={() => showOperationModal("publish")}>
-        批量发布上线
+      <Button
+        key="renderConfig"
+        type="link"
+        size="small"
+        onClick={() => {
+          setCurrentMiniapp(record);
+          setRenderConfigVisible(true);
+        }}
+      >
+        渲染配置
       </Button>
-      <Button type="primary" danger onClick={() => showOperationModal("rollback")}>
-        批量回退版本
+      <Button key="operationConfig" type="link" size="small">
+        运营配置
       </Button>
-    </Space>,
-  ];
+      <Button key="privacyManage" type="link" size="small">
+        隐私管理
+      </Button>
+    </Space>
+  );
+
+  // 研发操作按钮
+  const devActionButtons = record => (
+    <Space
+      direction="vertical"
+      size={4}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+      }}
+    >
+      <Button
+        key="config"
+        type="link"
+        size="small"
+        onClick={() => showDevConfig(record)}
+      >
+        查看开发配置
+      </Button>
+      <Button
+        key="bindTemplate"
+        type="link"
+        size="small"
+        onClick={() => showBindTestTemplateModal(record)}
+      >
+        绑定测试模板
+      </Button>
+      <Button
+        key="qrcode"
+        type="link"
+        size="small"
+        onClick={() => {
+          setCurrentMiniapp(record);
+          setQrcodeVisible(true);
+          setQrcodePath("");
+          setQrcodeVersion("online");
+        }}
+      >
+        生成二维码
+      </Button>
+      <Button
+        key="detail"
+        type="link"
+        size="small"
+        onClick={() => handleShowDetail(record)}
+      >
+        版本信息
+      </Button>
+    </Space>
+  );
+
+  // 查看开发配置
+  const showDevConfig = record => {
+    // 模拟获取当前小程序的开发配置
+    const config = {
+      requestDomains: ["https://api.example.com", "https://api2.example.com"],
+      socketDomains: ["wss://socket.example.com"],
+      uploadDomains: ["https://upload.example.com"],
+      downloadDomains: ["https://download.example.com"],
+      webviewDomains: ["https://webview.example.com"],
+    };
+    setCurrentConfig(config);
+    setDevConfigVisible(true);
+  };
+
+  // 添加开发配置查看弹窗
+  const DevConfigModal = () => (
+    <Modal
+      title="开发配置"
+      open={devConfigVisible}
+      onCancel={() => {
+        setDevConfigVisible(false);
+        setCurrentConfig(null);
+      }}
+      footer={null}
+      width={800}
+    >
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        {/* request域名 */}
+        <div>
+          <Alert
+            message="request合法域名"
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+          />
+          <div
+            style={{
+              backgroundColor: "#fafafa",
+              padding: 16,
+              borderRadius: 4,
+            }}
+          >
+            {currentConfig?.requestDomains.map((domain, index) => (
+              <div key={index} style={{ marginBottom: 8 }}>
+                <Text copyable>{domain}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* socket域名 */}
+        <div>
+          <Alert
+            message="socket合法域名"
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+          />
+          <div
+            style={{
+              backgroundColor: "#fafafa",
+              padding: 16,
+              borderRadius: 4,
+            }}
+          >
+            {currentConfig?.socketDomains.map((domain, index) => (
+              <div key={index} style={{ marginBottom: 8 }}>
+                <Text copyable>{domain}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 上传域名 */}
+        <div>
+          <Alert
+            message="上传合法域名"
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+          />
+          <div
+            style={{
+              backgroundColor: "#fafafa",
+              padding: 16,
+              borderRadius: 4,
+            }}
+          >
+            {currentConfig?.uploadDomains.map((domain, index) => (
+              <div key={index} style={{ marginBottom: 8 }}>
+                <Text copyable>{domain}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 下载域名 */}
+        <div>
+          <Alert
+            message="下载合法域名"
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+          />
+          <div
+            style={{
+              backgroundColor: "#fafafa",
+              padding: 16,
+              borderRadius: 4,
+            }}
+          >
+            {currentConfig?.downloadDomains.map((domain, index) => (
+              <div key={index} style={{ marginBottom: 8 }}>
+                <Text copyable>{domain}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* web-view域名 */}
+        <div>
+          <Alert
+            message="web-view合法域名"
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+          />
+          <div
+            style={{
+              backgroundColor: "#fafafa",
+              padding: 16,
+              borderRadius: 4,
+            }}
+          >
+            {currentConfig?.webviewDomains.map((domain, index) => (
+              <div key={index} style={{ marginBottom: 8 }}>
+                <Text copyable>{domain}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Space>
+    </Modal>
+  );
 
   return (
     <div className="page-container">
       <ProTable
+        scroll={{
+          x: "max-content", // 使用 max-content 确保内容不会被压缩
+          scrollToFirstRowOnChange: true, // 翻页时滚动到第一行
+        }}
         columns={columns}
         dataSource={mockData}
         rowKey="id"
@@ -1108,240 +2216,426 @@ function MiniappList() {
         dateFormatter="string"
         headerTitle="小程序列表"
         toolBarRender={() => <Space>{toolbarButtons}</Space>}
+        sticky // 添加表头固定
       />
 
       {/* 批量操作弹窗 */}
       <Modal
-        title={operationConfig[operationType]?.title || "批量操作"}
+        title={
+          {
+            submit: "批量提交审核",
+            withdraw: "批量撤回审核",
+            publish: "批量发布上线",
+            rollback: "批量回退版本",
+          }[operationType]
+        }
         open={operationModalVisible}
         onOk={handleBatchOperation}
-        onCancel={() => setOperationModalVisible(false)}
+        onCancel={() => {
+          setOperationModalVisible(false);
+          setSelectedApps([]);
+        }}
+        width={1000}
         confirmLoading={loading}
-        width={operationType === "publish" ? 800 : 600}
-        bodyStyle={{ maxHeight: "70vh", overflow: "auto" }}
       >
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+        <Space direction="vertical" style={{ width: "100%" }} size="large">
           <Alert
-            type="info"
             message={
-              operationConfig[operationType]?.desc || "请选择要操作的小程序"
+              {
+                submit: "提交审核说明",
+                withdraw: "撤回审核说明",
+                publish: "发布上线说明",
+                rollback: "回退版本说明",
+              }[operationType]
             }
-            style={{ marginBottom: 8 }}
+            description={
+              {
+                submit: "选择需要提交审核的小程序，提交后将进入审核流程",
+                withdraw: "选择需要撤回审核的小程序，撤回后可重新提交",
+                publish: "选择需要发布的小程序，发布后将更新线上版本",
+                rollback: "选择需要回退的小程序，回退后将恢复到上一个版本",
+              }[operationType]
+            }
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
           />
 
-          {/* 选择框上方的全选功能 */}
-          {operationType &&
-            operationConfig[operationType].options.length > 0 && (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+          <div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <Checkbox
+                checked={selectedApps.length === mockData.length}
+                indeterminate={
+                  selectedApps.length > 0 &&
+                  selectedApps.length < mockData.length
+                }
+                onChange={e => {
+                  if (e.target.checked) {
+                    setSelectedApps(mockData);
+                  } else {
+                    setSelectedApps([]);
+                  }
                 }}
               >
-                <Checkbox
-                  checked={
-                    operationType &&
-                    selectedApps.length ===
-                      operationConfig[operationType].options.length
-                  }
-                  indeterminate={
-                    operationType &&
-                    selectedApps.length > 0 &&
-                    selectedApps.length <
-                      operationConfig[operationType].options.length
-                  }
-                  onChange={e => handleSelectAll(e.target.checked)}
-                >
-                  全选
-                </Checkbox>
-                <Text type="secondary">
-                  已选择 {selectedApps.length}/
-                  {operationConfig[operationType].options.length} 个小程序
-                </Text>
-              </div>
-            )}
+                全选
+              </Checkbox>
+              <Text type="secondary">
+                已选择 {selectedApps.length}/{mockData.length} 个小程序
+              </Text>
+            </div>
 
-          {/* 小程序选择框 */}
-          <Select
-            mode="multiple"
-            style={{ width: "100%" }}
-            placeholder="请选择小程序"
-            value={selectedApps}
-            onChange={setSelectedApps}
-            optionFilterProp="label"
-            maxTagCount={5}
-            listHeight={250}
-            options={(operationConfig[operationType]?.options || []).map(
-              item => ({
-                label: (
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "4px 0",
-                    }}
-                  >
-                    <Space>
-                      <Avatar size="small" src={item.icon} />
-                      <span>{item.name}</span>
-                      <Tag>{item.appid}</Tag>
-                    </Space>
-                    <Space>
-                      <span style={{ color: "#1890ff" }}>
-                        {item.templateInfo}
-                      </span>
-                      {operationType === "publish" && (
-                        <Tag color="success">审核已通过</Tag>
-                      )}
-                    </Space>
-                  </div>
-                ),
-                value: item.id,
-                searchValue: `${item.name} ${item.appid} ${item.templateInfo}`,
-              })
-            )}
+            <Table
+              {...commonTableProps}
+              rowSelection={{
+                selectedRowKeys: selectedApps.map(item => item.id),
+                onChange: (selectedRowKeys, selectedRows) => {
+                  setSelectedApps(selectedRows);
+                },
+              }}
+              dataSource={mockData.filter(item => {
+                // 根据操作类型过滤可选的小程序
+                switch (operationType) {
+                  case "submit":
+                    return ["UNPUBLISHED", "REJECT"].includes(item.status);
+                  case "withdraw":
+                    return item.status === "AUDITING";
+                  case "publish":
+                    return item.status === "PUBLISHED";
+                  case "rollback":
+                    return item.status === "PUBLISHED" && item.currentVersion;
+                  default:
+                    return true;
+                }
+              })}
+              rowKey="id"
+            />
+          </div>
+
+          {/* 提审备注 - 仅在提交审核时显示 */}
+          {operationType === "submit" && (
+            <Form form={form}>
+              <Form.Item
+                name="auditRemark"
+                label="提审备注"
+                rules={[{ required: true, message: "请输入提审备注" }]}
+                extra="建议填写本次提审的主要改动内容，方便后续追踪和管理"
+              >
+                <TextArea
+                  placeholder="请输入本次提审的备注信息"
+                  autoSize={{ minRows: 3, maxRows: 5 }}
+                  style={{ backgroundColor: "#fafafa" }}
+                />
+              </Form.Item>
+            </Form>
+          )}
+
+          <Alert
+            type="warning"
+            message="注意事项"
+            description={
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                {
+                  {
+                    submit: (
+                      <>
+                        <li>提交审核后将无法修改小程序配置</li>
+                        <li>审核周期通常为1-3个工作日</li>
+                      </>
+                    ),
+                    withdraw: (
+                      <>
+                        <li>撤回审核后需要重新提交才能发布</li>
+                        <li>建议在发现问题时及时撤回</li>
+                      </>
+                    ),
+                    publish: (
+                      <>
+                        <li>发布后将立即更新线上版本</li>
+                        <li>请确保已完成相关测试</li>
+                      </>
+                    ),
+                    rollback: (
+                      <>
+                        <li>回退后将恢复到上一个版本</li>
+                        <li>回退操作不可逆，请谨慎操作</li>
+                      </>
+                    ),
+                  }[operationType]
+                }
+              </ul>
+            }
           />
-
-          {/* 无可操作小程序时的提示 */}
-          {operationType &&
-            operationConfig[operationType].options.length === 0 && (
-              <Empty
-                description={`暂无可${operationConfig[operationType].title}的小程序`}
-                style={{ margin: "20px 0" }}
-              />
-            )}
-
-          {/* 发布上线时显示未通过审核的小程序列表 */}
-          {operationType === "publish" &&
-            operationConfig.publish.notPassedList &&
-            operationConfig.publish.notPassedList.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <Alert
-                  type="warning"
-                  message={`${operationConfig.publish.notPassedList.length}个小程序未通过审核，无法发布上线`}
-                  style={{ marginBottom: 8 }}
-                />
-                <Table
-                  dataSource={operationConfig.publish.notPassedList}
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    {
-                      title: "小程序名称",
-                      dataIndex: "name",
-                      ellipsis: true,
-                      render: (text, record) => (
-                        <Space>
-                          <Avatar size="small" src={record.icon} />
-                          <span>{text}</span>
-                        </Space>
-                      ),
-                    },
-                    {
-                      title: "AppID",
-                      dataIndex: "appid",
-                      width: 120,
-                      ellipsis: true,
-                    },
-                    {
-                      title: "模板版本",
-                      dataIndex: "templateInfo",
-                      width: 180,
-                      ellipsis: true,
-                      render: text => (
-                        <span style={{ color: "#1890ff" }}>{text}</span>
-                      ),
-                    },
-                    {
-                      title: "未通过原因",
-                      dataIndex: "reason",
-                      ellipsis: true,
-                      render: text => <Text type="danger">{text}</Text>,
-                    },
-                  ]}
-                  scroll={{ y: 180 }}
-                />
-              </div>
-            )}
         </Space>
       </Modal>
 
       {/* 绑定模板弹窗 */}
       <Modal
-        title="绑定模板版本"
+        title="批量绑定模板"
         open={bindModalVisible}
-        confirmLoading={loading}
         onOk={handleBindTemplate}
         onCancel={() => {
           setBindModalVisible(false);
           setSelectedTemplate(null);
           setBindingMiniapps([]);
         }}
-        width={800}
+        width={1000}
+        confirmLoading={loading}
       >
-        <Form layout="vertical">
-          <Form.Item
-            label="选择模板版本"
-            required
-            extra="选择的模板版本将作为所选小程序的测试版本"
-          >
+        <Space direction="vertical" style={{ width: "100%" }} size="large">
+          <Alert
+            message="批量绑定说明"
+            description="选择需要绑定的小程序和目标模板版本，绑定后将更新所选小程序的模板配置。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+
+          <Form.Item label="选择模板版本" required style={{ marginBottom: 24 }}>
             <Select
+              placeholder="请选择要绑定的模板版本"
               value={selectedTemplate}
               onChange={setSelectedTemplate}
-              options={templateOptions}
-              placeholder="请选择模板版本"
               style={{ width: "100%" }}
+              options={templateOptions.map(tpl => ({
+                value: tpl.value,
+                label: (
+                  <Space>
+                    <span>{tpl.label}</span>
+                    <Tag color="purple">v{tpl.version}</Tag>
+                  </Space>
+                ),
+              }))}
             />
           </Form.Item>
 
-          <Form.Item label="待绑定的小程序">
+          <div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <Checkbox
+                checked={bindingMiniapps.length === mockData.length}
+                indeterminate={
+                  bindingMiniapps.length > 0 &&
+                  bindingMiniapps.length < mockData.length
+                }
+                onChange={e => {
+                  if (e.target.checked) {
+                    setBindingMiniapps(mockData);
+                  } else {
+                    setBindingMiniapps([]);
+                  }
+                }}
+              >
+                全选
+              </Checkbox>
+              <Text type="secondary">
+                已选择 {bindingMiniapps.length}/{mockData.length} 个小程序
+              </Text>
+            </div>
+
             <Table
-              size="small"
-              dataSource={bindingMiniapps}
+              rowSelection={{
+                selectedRowKeys: bindingMiniapps.map(item => item.id),
+                onChange: (selectedRowKeys, selectedRows) => {
+                  setBindingMiniapps(selectedRows);
+                },
+              }}
+              dataSource={mockData}
               rowKey="id"
+              size="small"
+              scroll={{ y: 400 }}
+              pagination={false}
               columns={[
                 {
                   title: "小程序名称",
                   dataIndex: "name",
+                  fixed: "left",
+                  width: 200,
                   render: (text, record) => (
                     <Space>
-                      <Avatar size="small" src={record.icon} />
-                      <Text>{text}</Text>
-                      <Tag>{record.appid}</Tag>
+                      <Avatar size="small" src={record.icon} shape="square" />
+                      <span>{text}</span>
                     </Space>
                   ),
+                  filterMode: "menu",
+                  filterSearch: true,
+                  filters: Array.from(
+                    new Set(mockData.map(item => item.name))
+                  ).map(name => ({
+                    text: name,
+                    value: name,
+                  })),
+                  onFilter: (value, record) => record.name.includes(value),
                 },
                 {
-                  title: "当前模板版本",
-                  dataIndex: "template",
-                  render: template => {
-                    const tpl = templateOptions.find(t => t.value === template);
-                    return tpl ? tpl.label : "-";
+                  title: "小程序ID",
+                  dataIndex: "appid",
+                  width: 150,
+                  filterMode: "menu",
+                  filterSearch: true,
+                  filters: Array.from(
+                    new Set(mockData.map(item => item.appid))
+                  ).map(appid => ({
+                    text: appid,
+                    value: appid,
+                  })),
+                  onFilter: (value, record) => record.appid.includes(value),
+                },
+                {
+                  title: "线上版本",
+                  dataIndex: "currentVersion",
+                  width: 120,
+                  render: version =>
+                    version ? (
+                      <Tag color="success">v{version}</Tag>
+                    ) : (
+                      <Text type="secondary">-</Text>
+                    ),
+                  filters: [
+                    { text: "有线上版本", value: "has" },
+                    { text: "无线上版本", value: "none" },
+                  ],
+                  onFilter: (value, record) =>
+                    value === "has"
+                      ? !!record.currentVersion
+                      : !record.currentVersion,
+                },
+                {
+                  title: "审核版本",
+                  dataIndex: "auditVersion",
+                  width: 200,
+                  render: (version, record) => {
+                    if (!version) return <Text type="secondary">-</Text>;
+
+                    const statusConfig = {
+                      0: { color: "processing", text: "审核中" },
+                      1: { color: "success", text: "已通过" },
+                      2: { color: "error", text: "未通过" },
+                    };
+
+                    const status = record.auditStatus
+                      ? statusConfig[record.auditStatus]
+                      : null;
+
+                    return (
+                      <Space>
+                        <Tag color="warning">v{version}</Tag>
+                        {status && (
+                          <Tag color={status.color}>{status.text}</Tag>
+                        )}
+                      </Space>
+                    );
+                  },
+                  filters: [
+                    { text: "有审核版本", value: "has" },
+                    { text: "无审核版本", value: "none" },
+                    { text: "审核中", value: "0" },
+                    { text: "已通过", value: "1" },
+                    { text: "未通过", value: "2" },
+                  ],
+                  onFilter: (value, record) => {
+                    if (value === "has") return !!record.auditVersion;
+                    if (value === "none") return !record.auditVersion;
+                    return record.auditStatus === value;
                   },
                 },
+                {
+                  title: "测试版本",
+                  dataIndex: "template",
+                  width: 200,
+                  render: (template, record) => {
+                    const templateInfo = templateOptions.find(
+                      t => t.value === template
+                    );
+                    return (
+                      <Space>
+                        <Tag color="purple">v{templateInfo?.version}</Tag>
+                        <Text type="secondary">({templateInfo?.label})</Text>
+                      </Space>
+                    );
+                  },
+                  filters: [
+                    { text: "有测试版本", value: "has" },
+                    { text: "无测试版本", value: "none" },
+                  ],
+                  onFilter: (value, record) => {
+                    if (value === "has") return !!record.template;
+                    if (value === "none") return !record.template;
+                    return true;
+                  },
+                },
+                {
+                  title: "当前模板",
+                  dataIndex: "template",
+                  width: 200,
+                  render: template => {
+                    const templateInfo = templateOptions.find(
+                      t => t.value === template
+                    );
+                    return templateInfo ? templateInfo.label : "-";
+                  },
+                  filterMode: "menu",
+                  filterSearch: true,
+                  filters: templateOptions.map(template => ({
+                    text: template.label,
+                    value: template.value,
+                  })),
+                  onFilter: (value, record) => record.template === value,
+                },
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  width: 120,
+                  render: (status, record) => {
+                    const config = statusConfig[status];
+                    return (
+                      <Space>
+                        {config.icon}
+                        <Tag color={config.color}>{config.text}</Tag>
+                        {status === "REJECT" && (
+                          <Tooltip title={record.rejectReason}>
+                            <InfoCircleOutlined
+                              style={{ color: "#ff4d4f", cursor: "pointer" }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Space>
+                    );
+                  },
+                  filters: Object.values(statusConfig).map(item => ({
+                    text: item.text,
+                    value: item.value,
+                  })),
+                  onFilter: (value, record) => record.status === value,
+                },
               ]}
-              pagination={false}
-              scroll={{ y: 300 }}
             />
-          </Form.Item>
+          </div>
 
           <Alert
-            type="info"
-            message="绑定说明"
+            type="warning"
+            message="注意事项"
             description={
               <ul style={{ margin: 0, paddingLeft: 16 }}>
-                <li>绑定后将自动生成测试版本</li>
-                <li>可以基于测试版本提交审核或发布上线</li>
-                <li>建议先在单个小程序验证后再批量绑定</li>
-                <li>批量绑定时请确保所选小程序都适用于该模板</li>
+                <li>绑定模板后，将更新所选小程序的模板配置</li>
+                <li>请确保所选小程序适用于目标模板版本</li>
+                <li>建议在绑定前备份相关配置</li>
               </ul>
             }
-            style={{ marginTop: 16 }}
           />
-        </Form>
+        </Space>
       </Modal>
 
       {/* 详情弹窗 */}
@@ -1722,6 +3016,518 @@ function MiniappList() {
           />
         </Space>
       </Modal>
+
+      {/* 查看配置弹窗 */}
+      <Modal
+        title={`${currentMiniapp?.name || ""} - 开发配置`}
+        open={configVisible}
+        onCancel={() => setConfigVisible(false)}
+        footer={null}
+        width={800}
+      >
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          {/* request域名 */}
+          <div>
+            <Alert
+              message="request合法域名"
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+            <div
+              style={{
+                background: "#f5f5f5",
+                padding: 16,
+                borderRadius: 4,
+              }}
+            >
+              {currentConfig?.requestDomains.map((domain, index) => (
+                <div key={index} style={{ marginBottom: 8 }}>
+                  <Text copyable>{domain}</Text>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* socket域名 */}
+          <div>
+            <Alert
+              message="socket合法域名"
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+            <div
+              style={{
+                background: "#f5f5f5",
+                padding: 16,
+                borderRadius: 4,
+              }}
+            >
+              {currentConfig?.socketDomains.map((domain, index) => (
+                <div key={index} style={{ marginBottom: 8 }}>
+                  <Text copyable>{domain}</Text>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 上传域名 */}
+          <div>
+            <Alert
+              message="上传合法域名"
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+            <div
+              style={{
+                background: "#f5f5f5",
+                padding: 16,
+                borderRadius: 4,
+              }}
+            >
+              {currentConfig?.uploadDomains.map((domain, index) => (
+                <div key={index} style={{ marginBottom: 8 }}>
+                  <Text copyable>{domain}</Text>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 下载域名 */}
+          <div>
+            <Alert
+              message="下载合法域名"
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+            <div
+              style={{
+                background: "#f5f5f5",
+                padding: 16,
+                borderRadius: 4,
+              }}
+            >
+              {currentConfig?.downloadDomains.map((domain, index) => (
+                <div key={index} style={{ marginBottom: 8 }}>
+                  <Text copyable>{domain}</Text>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* web-view域名 */}
+          <div>
+            <Alert
+              message="web-view合法域名"
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+            <div
+              style={{
+                background: "#f5f5f5",
+                padding: 16,
+                borderRadius: 4,
+              }}
+            >
+              {currentConfig?.webviewDomains.map((domain, index) => (
+                <div key={index} style={{ marginBottom: 8 }}>
+                  <Text copyable>{domain}</Text>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Space>
+      </Modal>
+
+      {/* 批量开发设置弹窗 */}
+      <Modal
+        title="批量开发设置"
+        open={batchDevSettingsVisible}
+        onOk={handleBatchDevSettings}
+        onCancel={() => {
+          setBatchDevSettingsVisible(false);
+          setSelectedMiniappsForSettings([]);
+          batchSettingsForm.resetFields();
+        }}
+        width={900}
+        confirmLoading={loading}
+      >
+        <Form
+          form={batchSettingsForm}
+          layout="vertical"
+          initialValues={{
+            requestDomains: defaultDomainConfig.requestDomains.join("\n"),
+            socketDomains: defaultDomainConfig.socketDomains.join("\n"),
+            uploadDomains: defaultDomainConfig.uploadDomains.join("\n"),
+            downloadDomains: defaultDomainConfig.downloadDomains.join("\n"),
+            webviewDomains: defaultDomainConfig.webviewDomains.join("\n"),
+          }}
+        >
+          <Alert
+            message="批量设置说明"
+            description="选择需要配置的小程序，设置将应用到所有选中的小程序。此操作会覆盖小程序现有的域名配置。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+
+          <Form.Item
+            label="选择小程序"
+            name="miniapps"
+            rules={[{ required: true, message: "请选择至少一个小程序" }]}
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 8,
+                }}
+              >
+                <Checkbox
+                  checked={
+                    selectedMiniappsForSettings.length === mockData.length
+                  }
+                  indeterminate={
+                    selectedMiniappsForSettings.length > 0 &&
+                    selectedMiniappsForSettings.length < mockData.length
+                  }
+                  onChange={e => handleSelectAllMiniapps(e.target.checked)}
+                >
+                  全选
+                </Checkbox>
+                <Text type="secondary">
+                  已选择 {selectedMiniappsForSettings.length}/{mockData.length}{" "}
+                  个小程序
+                </Text>
+              </div>
+
+              <Table
+                rowSelection={{
+                  selectedRowKeys: selectedMiniappsForSettings,
+                  onChange: setSelectedMiniappsForSettings,
+                }}
+                dataSource={mockData}
+                rowKey="id"
+                size="small"
+                pagination={false}
+                scroll={{ y: 240 }}
+                columns={[
+                  {
+                    title: "小程序名称",
+                    dataIndex: "name",
+                    render: (text, record) => (
+                      <Space>
+                        <Avatar size="small" src={record.icon} shape="square" />
+                        <span>{text}</span>
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: "小程序ID",
+                    dataIndex: "appid",
+                    width: 150,
+                  },
+                  {
+                    title: "媒体厂商",
+                    dataIndex: "vendor",
+                    width: 120,
+                  },
+                ]}
+              />
+            </div>
+          </Form.Item>
+
+          <Tabs
+            defaultActiveKey="request"
+            items={[
+              {
+                key: "request",
+                label: "request域名",
+                children: (
+                  <Form.Item
+                    name="requestDomains"
+                    rules={[
+                      { required: true, message: "请输入request合法域名" },
+                      {
+                        validator: (_, value) => {
+                          const domains = value
+                            .split("\n")
+                            .filter(item => item.trim());
+                          const isValid = domains.every(
+                            domain =>
+                              domain.startsWith("http://") ||
+                              domain.startsWith("https://")
+                          );
+                          return isValid
+                            ? Promise.resolve()
+                            : Promise.reject(
+                                "域名必须以 http:// 或 https:// 开头"
+                              );
+                        },
+                      },
+                    ]}
+                    extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                  >
+                    <TextArea
+                      placeholder="请输入request合法域名，每行一个"
+                      autoSize={{ minRows: 3, maxRows: 10 }}
+                    />
+                  </Form.Item>
+                ),
+              },
+              {
+                key: "socket",
+                label: "socket域名",
+                children: (
+                  <Form.Item
+                    name="socketDomains"
+                    rules={[
+                      { required: true, message: "请输入socket合法域名" },
+                      {
+                        validator: (_, value) => {
+                          const domains = value
+                            .split("\n")
+                            .filter(item => item.trim());
+                          const isValid = domains.every(
+                            domain =>
+                              domain.startsWith("ws://") ||
+                              domain.startsWith("wss://")
+                          );
+                          return isValid
+                            ? Promise.resolve()
+                            : Promise.reject("域名必须以 ws:// 或 wss:// 开头");
+                        },
+                      },
+                    ]}
+                    extra="每行一个域名，必须以 ws:// 或 wss:// 开头"
+                  >
+                    <TextArea
+                      placeholder="请输入socket合法域名，每行一个"
+                      autoSize={{ minRows: 2, maxRows: 5 }}
+                    />
+                  </Form.Item>
+                ),
+              },
+              {
+                key: "upload",
+                label: "上传域名",
+                children: (
+                  <Form.Item
+                    name="uploadDomains"
+                    rules={[
+                      { required: true, message: "请输入uploadFile合法域名" },
+                      {
+                        validator: (_, value) => {
+                          const domains = value
+                            .split("\n")
+                            .filter(item => item.trim());
+                          const isValid = domains.every(
+                            domain =>
+                              domain.startsWith("http://") ||
+                              domain.startsWith("https://")
+                          );
+                          return isValid
+                            ? Promise.resolve()
+                            : Promise.reject(
+                                "域名必须以 http:// 或 https:// 开头"
+                              );
+                        },
+                      },
+                    ]}
+                    extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                  >
+                    <TextArea
+                      placeholder="请输入uploadFile合法域名，每行一个"
+                      autoSize={{ minRows: 2, maxRows: 5 }}
+                    />
+                  </Form.Item>
+                ),
+              },
+              {
+                key: "download",
+                label: "下载域名",
+                children: (
+                  <Form.Item
+                    name="downloadDomains"
+                    rules={[
+                      { required: true, message: "请输入downloadFile合法域名" },
+                      {
+                        validator: (_, value) => {
+                          const domains = value
+                            .split("\n")
+                            .filter(item => item.trim());
+                          const isValid = domains.every(
+                            domain =>
+                              domain.startsWith("http://") ||
+                              domain.startsWith("https://")
+                          );
+                          return isValid
+                            ? Promise.resolve()
+                            : Promise.reject(
+                                "域名必须以 http:// 或 https:// 开头"
+                              );
+                        },
+                      },
+                    ]}
+                    extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                  >
+                    <TextArea
+                      placeholder="请输入downloadFile合法域名，每行一个"
+                      autoSize={{ minRows: 2, maxRows: 5 }}
+                    />
+                  </Form.Item>
+                ),
+              },
+              {
+                key: "webview",
+                label: "web-view域名",
+                children: (
+                  <Form.Item
+                    name="webviewDomains"
+                    rules={[
+                      { required: true, message: "请输入web-view域名" },
+                      {
+                        validator: (_, value) => {
+                          const domains = value
+                            .split("\n")
+                            .filter(item => item.trim());
+                          const isValid = domains.every(
+                            domain =>
+                              domain.startsWith("http://") ||
+                              domain.startsWith("https://")
+                          );
+                          return isValid
+                            ? Promise.resolve()
+                            : Promise.reject(
+                                "域名必须以 http:// 或 https:// 开头"
+                              );
+                        },
+                      },
+                    ]}
+                    extra="每行一个域名，必须以 http:// 或 https:// 开头"
+                  >
+                    <TextArea
+                      placeholder="请输入web-view域名，每行一个"
+                      autoSize={{ minRows: 2, maxRows: 5 }}
+                    />
+                  </Form.Item>
+                ),
+              },
+            ]}
+          />
+
+          <Alert
+            type="warning"
+            message="注意事项"
+            description={
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                <li>
+                  所有域名必须以 http:// 或 https:// 开头（socket域名以 ws:// 或
+                  wss:// 开头）
+                </li>
+                <li>域名不能使用 IP 地址或 localhost</li>
+                <li>域名必须经过 ICP 备案</li>
+                <li>同一域名只能配置一次</li>
+                <li>批量设置将覆盖所选小程序的现有配置</li>
+              </ul>
+            }
+          />
+        </Form>
+      </Modal>
+
+      {/* 绑定测试模板弹窗 */}
+      <Modal
+        title="绑定测试模板"
+        open={bindTestTemplateVisible}
+        onOk={handleBindTestTemplate}
+        onCancel={() => {
+          setBindTestTemplateVisible(false);
+          setCurrentMiniapp(null);
+          setSelectedTemplate(null);
+        }}
+        width={600}
+      >
+        <Space direction="vertical" style={{ width: "100%" }} size="large">
+          <Alert
+            message="绑定说明"
+            description="选择要绑定的模板版本，绑定后将自动生成测试版本。"
+            type="info"
+            showIcon
+          />
+
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Space align="center">
+                <Avatar
+                  size="small"
+                  src={currentMiniapp?.icon}
+                  shape="square"
+                />
+                <Text strong>{currentMiniapp?.name}</Text>
+                <Tag>{currentMiniapp?.appid}</Tag>
+              </Space>
+            </div>
+
+            <Form.Item
+              label="选择模板版本"
+              required
+              style={{ marginBottom: 24 }}
+            >
+              <Select
+                placeholder="请选择要绑定的模板版本"
+                value={selectedTemplate}
+                onChange={setSelectedTemplate}
+                style={{ width: "100%" }}
+                options={templateOptions.map(tpl => ({
+                  value: tpl.value,
+                  label: (
+                    <Space>
+                      <span>{tpl.label}</span>
+                      <Tag color="purple">v{tpl.version}</Tag>
+                    </Space>
+                  ),
+                }))}
+              />
+            </Form.Item>
+          </div>
+
+          <Alert
+            type="warning"
+            message="注意事项"
+            description={
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                <li>绑定后将自动生成测试版本</li>
+                <li>可以基于测试版本提交审核或发布上线</li>
+                <li>请确保选择的模板版本适用于该小程序</li>
+              </ul>
+            }
+          />
+        </Space>
+      </Modal>
+
+      <DevConfigModal />
+      <RenderConfigModal
+        visible={renderConfigVisible}
+        currentData={{
+          currentConfig: currentMiniapp?.renderConfig,
+          draftConfig: currentMiniapp?.draftRenderConfig,
+          version: currentMiniapp?.currentVersion || '1.0.0'
+        }}
+        schema={configSchema}
+        title={`${currentMiniapp?.name || '小程序'} - 渲染配置`}
+        onClose={() => {
+          setRenderConfigVisible(false);
+          setCurrentMiniapp(null);
+        }}
+        onSave={handleSaveConfig}
+        onPublish={handlePublishMiniapp}
+      />
     </div>
   );
 }

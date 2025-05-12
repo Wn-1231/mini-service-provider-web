@@ -49,32 +49,22 @@ function Navigation() {
   };
 
   const getMenuItems = platform => [
-    {
-      key: `${platform}/auth`,
-      icon: <KeyOutlined />,
-      label: "授权管理",
-      children: [
-        {
-          key: `/${platform}/auth/list`,
-          label: "授权列表",
-        },
-      ],
-    },
-    {
-      key: `${platform}/template`,
-      icon: <AppstoreOutlined />,
-      label: "模板管理",
-      children: [
-        {
-          key: `/${platform}/template/draft`,
-          label: "草稿箱列表",
-        },
-        {
-          key: `/${platform}/template/list`,
-          label: "模板列表",
-        },
-      ],
-    },
+    
+    // {
+    //   key: `${platform}/template`,
+    //   icon: <AppstoreOutlined />,
+    //   label: "模板管理",
+    //   children: [
+    //     {
+    //       key: `/${platform}/template/draft`,
+    //       label: "草稿箱列表",
+    //     },
+    //     {
+    //       key: `/${platform}/template/list`,
+    //       label: "模板列表",
+    //     },
+    //   ],
+    // },
     {
       key: `${platform}/miniapp`,
       icon: <MobileOutlined />,
@@ -83,6 +73,17 @@ function Navigation() {
         {
           key: `/${platform}/miniapp/list`,
           label: "小程序列表",
+        },
+      ],
+    },
+    {
+      key: `${platform}/auth`,
+      icon: <KeyOutlined />,
+      label: "授权管理",
+      children: [
+        {
+          key: `/${platform}/auth/list`,
+          label: "授权列表",
         },
       ],
     },
